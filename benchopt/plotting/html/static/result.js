@@ -655,31 +655,25 @@ const exportLatex = (button) => {
   // visible columns and float precision.
   const columns = Array.from(
     document.querySelectorAll('#table_container .gridjs-th-content'),
-    el => el.textContent.trim());
+    elementToLatex);
   const rows = Array.from(
     document.querySelectorAll('#table_container .gridjs-table tbody tr'),
-    tr => Array.from(tr.querySelectorAll('td'), td => td.innerText));
-
-  const escape = v => String(v)
-    .replace(/\\/g, '\\textbackslash{}')
-    .replace(/([&%$#_{}])/g, '\\$1')
-    .replace(/~/g, '\\textasciitilde{}')
-    .replace(/\^/g, '\\textasciicircum{}');
+    tr => Array.from(tr.querySelectorAll('td'), elementToLatex));
 
   const title = (getPlotData() || {}).title;
   let latex = "";
   if (title) {
     // Caption above the table, kept on a single line.
     latex += "\\begin{table}[h]\n\\centering\n\\caption{";
-    latex += title.replace(/<br\s*\/?>/g, ", ").replaceAll('_', '\\_');
+    latex += escapeLatex(title.replace(/<br\s*\/?>/g, ", "));
     latex += "}\n";
   }
   latex += '\\begin{tabular}{';
   latex += 'l'.repeat(columns.length);
   latex += '}\n\\toprule\n';
-  latex += columns.map(escape).join(' & ');
+  latex += columns.join(' & ');
   latex += ' \\\\\n\\midrule\n';
-  latex += rows.map(r => r.map(escape).join(' & ') + ' \\\\').join('\n');
+  latex += rows.map(r => r.join(' & ') + ' \\\\').join('\n');
   latex += '\n\\bottomrule\n\\end{tabular}\n';
   if (title) latex += "\n\\end{table}";
 
@@ -1576,6 +1570,82 @@ const valueToFixed = (value) => {
   return value;
 }
 
+/*
+ * Inline markup for table cells: `**bold**`, `*italic*` and `__underlined__`.
+ * They are rendered as HTML in the report and converted to the matching LaTeX
+ * commands on export. A cell whose text is a single number, e.g. `**1.234**`,
+ * is still handled as a number by the float precision control and the sorting.
+ */
+const CELL_MARKUP = [
+  [/\*\*([^*]+)\*\*/g, 'b'],
+  [/__([^_]+)__/g, 'u'],
+  [/\*([^*]+)\*/g, 'i'],
+];
+const LATEX_COMMANDS = {B: 'textbf', I: 'textit', U: 'underline'};
+
+const escapeHtml = (value) => value.replace(
+  /[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c])
+);
+
+// `\*` and `\_` give a literal marker: hide them behind a placeholder while
+// the markup is converted, then put them back.
+const PLACEHOLDERS = {'*': '\u0000', '_': '\u0001'};
+const LITERALS = {'\u0000': '*', '\u0001': '_'};
+
+// Escape the cell content first: only our own markup produces HTML tags.
+const markupToHtml = (value) => CELL_MARKUP.reduce(
+  (html, [regexp, tag]) => html.replace(regexp, `<${tag}>$1</${tag}>`),
+  escapeHtml(value).replace(/\\([*_])/g, (match, c) => PLACEHOLDERS[c])
+).replace(/[\u0000\u0001]/g, c => LITERALS[c]);
+
+// Cell text without its markup, used to sort and to format a wrapped number.
+const stripMarkup = (value) => CELL_MARKUP.reduce(
+  (text, [regexp]) => text.replace(regexp, '$1'),
+  String(value).replace(/\\([*_])/g, (match, c) => PLACEHOLDERS[c])
+).replace(/[\u0000\u0001]/g, c => LITERALS[c]);
+
+// Numeric value of a cell, or null if its text is not a single number.
+const cellNumber = (value) => {
+  if (typeof value === 'number') return value;
+  const text = typeof value === 'string' ? stripMarkup(value).trim() : '';
+  return text !== '' && !isNaN(text) ? Number(text) : null;
+};
+
+/**
+ * Render a cell, applying the float precision to numbers, markup or not.
+ */
+const formatCell = (value) => {
+  if (typeof value !== 'string') return valueToFixed(value);
+  const number = cellNumber(value);
+  const text = number === null ? value
+    : value.replace(stripMarkup(value).trim(), valueToFixed(number));
+  return gridjs.html(markupToHtml(text));
+};
+
+// Single pass: escaping in several passes would re-escape the braces of the
+// `\textbackslash{}` replacements.
+const LATEX_ESCAPES = {
+  '\\': '\\textbackslash{}', '~': '\\textasciitilde{}',
+  '^': '\\textasciicircum{}',
+};
+const escapeLatex = (value) => value.replace(
+  /[\\~^&%$#_{}]/g, c => LATEX_ESCAPES[c] || `\\${c}`
+);
+
+// Recurse: Grid.js wraps formatted cells in a <span>, and markup can be
+// nested (`**__text__**`).
+const nodeToLatex = (node) => {
+  if (node.nodeType === Node.TEXT_NODE) return escapeLatex(node.textContent);
+  const content = Array.from(node.childNodes, nodeToLatex).join('');
+  const command = LATEX_COMMANDS[node.nodeName];
+  return command ? `\\${command}{${content}}` : content;
+};
+
+/**
+ * Convert a rendered cell (or header) to LaTeX, keeping its formatting.
+ */
+const elementToLatex = (element) => nodeToLatex(element).trim();
+
 /**
  * Compare two cell values, handling both numbers and strings.
  *
@@ -1584,10 +1654,11 @@ const valueToFixed = (value) => {
  * would make all close numbers compare as equal.
  */
 const compareCells = (a, b) => {
-  if (typeof a === 'number' && typeof b === 'number') {
-    return a > b ? 1 : a < b ? -1 : 0;
+  const [numA, numB] = [cellNumber(a), cellNumber(b)];
+  if (numA !== null && numB !== null) {
+    return numA > numB ? 1 : numA < numB ? -1 : 0;
   }
-  return String(a).localeCompare(String(b));
+  return stripMarkup(a).localeCompare(stripMarkup(b));
 }
 
 const sortRows = (plotData, column, ascending) =>
@@ -1709,7 +1780,7 @@ function renderTable() {
     name,
     hidden: tableHiddenColumns.has(name),
     sort: { compare: compareCells },
-    formatter: (value) => valueToFixed(value),
+    formatter: formatCell,
   }));
 
   tableGrid = new gridjs.Grid({

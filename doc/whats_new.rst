@@ -17,6 +17,11 @@ Version 1.10.0 -- in development
 CLI
 ~~~
 
+- Add ``benchopt info -f <result_file>`` (repeatable, or ``-f all``) to
+  summarize result file(s) instead of listing benchmark solvers/datasets;
+  plain ``benchopt info`` now also lists available result files.
+  By `Thomas Moreau`_ (:gh:`990`)
+
 - Ship agent skills (``SKILL.md``, `Agent Skills <https://agentskills.io>`_
   standard) as package data and add ``benchopt sync-skills`` to install them
   into a project's ``.agents/skills/`` (or globally with ``--global``), with a
@@ -30,6 +35,10 @@ PLOT
 
 - Add ``Download PDF`` button in the HTML interface to download the current plot as a PDF file.
   By `Jad Yehya`_ & `Hippolyte Verninas`_ (:gh:`777`)
+
+- Table cells can be formatted with ``**bold**``, ``*italic*`` and
+  ``__underlined__`` markers.
+  By `Hippolyte Verninas`_ (:gh:`993`)
 
 - Change the plotly style to make it more like matplotlib.
   By `Hippolyte Verninas`_ (:gh:`966`)
