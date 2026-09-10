@@ -1203,6 +1203,14 @@ const _getScale = (scale) => {
   }
 }
 
+// Plotly draws 10^n tick labels 25% bigger than the others (formatLog), so a
+// log axis has to ask for less to tick at the same size as a linear one.
+const TICK_SIZE = 12;
+const axisScale = (type) => ({
+  type: type,
+  tickfont: { size: type === 'log' ? TICK_SIZE / 1.25 : TICK_SIZE },
+});
+
 const MPL_AXIS = {
   showline: true,
   linecolor: 'black',
@@ -1217,6 +1225,7 @@ const MPL_AXIS = {
   automargin: true,
   exponentformat: 'power',
   minexponent: 2,
+  tickfont: { size: TICK_SIZE },
   minor: { ticks: 'outside', ticklen: 4, tickcolor: 'black', showgrid: false },
 };
 const MPL_LAYOUT = {
@@ -1252,7 +1261,7 @@ const getBarChartLayout = () => {
     },
     yaxis: {
       ...MPL_AXIS,
-      type: getScale().yaxis,
+      ...axisScale(getScale().yaxis),
       title: axisTitle(data["ylabel"]),
     },
     xaxis: {
@@ -1298,7 +1307,7 @@ const getBoxplotChartLayout = () => {
     },
     yaxis: {
       ...MPL_AXIS,
-      type: getScale().yaxis,
+      ...axisScale(getScale().yaxis),
       title: axisTitle(plot_info["ylabel"]),
     },
     xaxis: {
@@ -1340,13 +1349,13 @@ const getScatterChartLayout = () => {
     },
     xaxis: {
       ...MPL_AXIS,
-      type: getScale().xaxis,
+      ...axisScale(getScale().xaxis),
       title: axisTitle(customData.xlabel),
       tickangle: 0,
     },
     yaxis: {
       ...MPL_AXIS,
-      type: getScale().yaxis,
+      ...axisScale(getScale().yaxis),
       title: axisTitle(customData.ylabel),
     },
     ...titleLayout(`${customData.title}`),
